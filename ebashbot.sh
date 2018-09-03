@@ -26,16 +26,18 @@ while true; do
 			;;
 			'grep '*|'cut '*)
 				[[ "$reply_id" != 'null' ]] && {
-					message_text="$(echo "$message_text" | tr -d '(){}`<>;|&$' | sed 's/--help//')"
-					for f in ${message_text//=/ }; {
-						[[ -e "$f" ]] && file_found=1 && break
+					message_text="$(echo "$message_text" | tr -d '(){}`<>;|&$')"
+					[[ ! "$(echo "$message_text" | grep -i 'recurs\|--help\|-.*r')" ]] && {
+						for f in ${message_text//=/ }; {
+							[[ -e "$f" ]] && file_found=1 && break
+						}
+						[[ "$file_found" != '1' ]] && {
+	                		                curl -s "$tele_url/sendMessage" \
+ 		                		               --data-urlencode "chat_id=$chat_id" \
+                	                		       --data-urlencode "reply_to_message_id=$reply_id" \
+                        	               	               --data-urlencode "text=$(echo -e "$reply_text" | eval "$message_text")"
+						} || file_found=0
 					}
-					[[ "$file_found" != '1' ]] && {
-	                	                curl -s "$tele_url/sendMessage" \
- 		                	               --data-urlencode "chat_id=$chat_id" \
-                	                	       --data-urlencode "reply_to_message_id=$reply_id" \
-                        	               	       --data-urlencode "text=$(echo -e "$reply_text" | eval "$message_text")"
-					} || file_found=0
 				}
 			;;
 			'alias '*)
@@ -56,11 +58,27 @@ while true; do
                                                         --data-urlencode "reply_to_message_id=$reply_id" \
                                                         --data-urlencode "text=$message_text"
 					;;
-##					'alias -r '*)
-##					;;
+					'alias -l'*)
+						curl -s "$tele_url/sendMessage" \
+                                                        --data-urlencode "chat_id=$chat_id" \
+                                                        --data-urlencode "reply_to_message_id=$reply_id" \
+                                                        --data-urlencode "text=$(sqlite3 alias <<< "select name from alias;" | tr '\n' ' ')"
+					;;
+					'alias -r '*)
+						message_text="${message_text:9}"
+						user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
+						[[ "$(sqlite3 alias <<< "select user_id from alias where name = '"$message_text"';")" == "$user_id" ]] && {
+							sqlite3 alias <<< "delete from alias where name = '"$message_text"';"
+							response='Alias deleted.'
+						} || response="Alias doesn't exist or you do not own it."
+						curl -s "$tele_url/sendMessage" \
+                                                        --data-urlencode "chat_id=$chat_id" \
+                                                        --data-urlencode "reply_to_message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")" \
+                                                        --data-urlencode "text=$response"
+					;;
 		                        *)
 						message_text="${message_text:6}"
-						[[ "$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" ]] &&
+						[[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"';")" ]] &&
                 		                curl -s "$tele_url/forwardMessage" \
                                 		        --data-urlencode "chat_id=$chat_id" \
 							--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
