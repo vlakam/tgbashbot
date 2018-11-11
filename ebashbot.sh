@@ -3,7 +3,7 @@
 token=''
 tele_url="https://api.telegram.org/bot$token"
 last_id=0
-[[ ! -f alias ]] && sqlite3 alias <<< 'create table alias(name varchar(10), user_id smallint, chat_id smallint, reply_id smallint);'
+[[ ! -f alias ]] && sqlite3 alias <<< 'create table alias(name varchar(10), user_id smallint, chat_id smallint, reply_id smallint, timestamp smallint);'
 
 while true; do
 	updates=$(curl -s "$tele_url/getUpdates" \
@@ -23,7 +23,7 @@ while true; do
 				curl -s "$tele_url/sendMessage" \
 					--data-urlencode "chat_id=$chat_id" \
 					--data-urlencode "reply_to_message_id=$reply_id" \
-					--data-urlencode "text=$(echo -e "$reply_text" | timeout 0.1s sed --sandbox "$message_text")"
+					--data-urlencode "text=$(echo -e "$reply_text" | timeout 0.1s sed -E --sandbox "$message_text")"
 			;;
 			'grep '*|'cut '*)
 				[[ "$reply_id" != 'null' ]] && {
@@ -43,6 +43,7 @@ while true; do
 			;;
 			'alias '*)
 				message_text="${message_text//;}"
+				message_id="$(echo "$updates" | jq ".result[$i].message.message_id")"
 				case $message_text in
 					'alias -a '*)
 						[[ "$reply_id" != 'null' ]] && {
@@ -50,7 +51,8 @@ while true; do
 							[[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" ]] && {
 								user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
 								chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
-								sqlite3 alias <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id);"
+								timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
+								sqlite3 alias <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id,$timestamp);"
 								message_text='Alias created'
 							} || message_text='Alias already exists or name contains non-alphanumeric characters.'
 						} || message_text='No reply message.'
@@ -59,11 +61,18 @@ while true; do
 							--data-urlencode "reply_to_message_id=$reply_id" \
 							--data-urlencode "text=$message_text"
 					;;
+					'alias -lm'*)
+						user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
+                                                curl -s "$tele_url/sendMessage" \
+                                                        --data-urlencode "chat_id=$chat_id" \
+                                                        --data-urlencode "reply_to_message_id=$message_id" \
+                                                        --data-urlencode "text=$(sqlite3 alias <<< "select name from alias where user_id = '"$user_id"';" | sort | tr '\n' ' ')"
+					;;
 					'alias -l'*)
 						curl -s "$tele_url/sendMessage" \
 							--data-urlencode "chat_id=$chat_id" \
-							--data-urlencode "reply_to_message_id=$reply_id" \
-							--data-urlencode "text=$(sqlite3 alias <<< "select name from alias;" | tr '\n' ' ')"
+							--data-urlencode "reply_to_message_id=$message_id" \
+							--data-urlencode "text=$(sqlite3 alias <<< "select name from alias;" | sort | tr '\n' ' ')"
 					;;
 					'alias -r '*)
 						message_text="${message_text:9}"
@@ -74,16 +83,25 @@ while true; do
 						} || response="Alias doesn't exist or you do not own it."
 						curl -s "$tele_url/sendMessage" \
 							--data-urlencode "chat_id=$chat_id" \
-							--data-urlencode "reply_to_message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")" \
+							--data-urlencode "reply_to_message_id=$message_id" \
 							--data-urlencode "text=$response"
+					;;
+					'alias -h'*)
+						curl -s "$tele_url/sendMessage" \
+							--data-urlencode "chat_id=$chat_id" \
+							--data-urlencode "reply_to_message_id=$message_id" \
+							--data-urlencode "text=$(cat help.txt)"
 					;;
 					*)
 						message_text="${message_text:6}"
-						[[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"';")" ]] &&
-						curl -s "$tele_url/forwardMessage" \
-							--data-urlencode "chat_id=$chat_id" \
-							--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
-							--data-urlencode "message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")"
+						[[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"';")" ]] && {
+							curl -s "$tele_url/forwardMessage" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
+								--data-urlencode "message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")"
+							timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
+							sqlite3 alias <<< "update alias set timestamp=$timestamp where name='"$message_text"';"
+						}
 					;;
 				esac
 			;;
