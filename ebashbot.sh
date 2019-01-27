@@ -17,10 +17,11 @@ while true; do
 			echo "$updates" | jq ".result[$i]" >> ebash.log
 			chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
 			reply_id="$(echo "$updates" | jq ".result[$i].message.reply_to_message.message_id")"
-			reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.text")"
-			[[ $reply_text == 'null' ]] && reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption")"
+			reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+			[[ $reply_text == 'null' ]] && reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 			reply_text="$(echo "$reply_text" | sed --sandbox 's#\\\\#\\#g;s#\\\"#"#g;s/^"//;s/"$//')"
 			message_text="$(echo "$updates" | jq ".result[$i].message.text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+			[[ $message_text == 'null' ]] && message_text="$(echo "$updates" | jq ".result[$i].message.caption" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 			case $message_text in
 				's/'*|'s#'*|'y/'*)
 					[[ "$reply_id" != 'null' ]] &&
@@ -113,7 +114,7 @@ while true; do
 							curl -s "$tele_url/sendMessage" \
 								--data-urlencode "chat_id=$chat_id" \
 								--data-urlencode "reply_to_message_id=$message_id" \
-								--data-urlencode "text=$(cat help.txt)"
+								--data-urlencode "text=$(cat alias_help.txt)"
 						;;
 						*)
 							message_text="${message_text:6}"
@@ -128,11 +129,119 @@ while true; do
 						;;
 					esac
 				;;
+				'hashtag'*)
+					message_text="${message_text//;}"
+					content_text="${message_text:11}"
+					user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
+					user_name="$(echo "$updates" | jq ".result[$i].message.from.username")"
+					message_id="$(echo "$updates" | jq ".result[$i].message.message_id")"
+					case $message_text in
+						'hashtag -s'*)
+							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
+							if (( $(echo $content_text | wc -m) < 14 )); then
+								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
+									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
+										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
+											sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
+										fi
+										sqlite3 hashtag <<< "insert into '"$content_text"' values($user_id);"
+										answer_text="You have subscribed to hashtag $content_text."
+									else
+										answer_text="You are already subscribed to hashtag $content_text."
+									fi
+								else
+									answer_text='Hashtag name contains non-alphanumeric characters.'
+								fi
+							else
+								answer_text='Hashtag name should not exceed 12 characters.'
+							fi
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$message_id" \
+								--data-urlencode "text=$answer_text"
+						;;
+						'hashtag -u'*)
+							if [[ "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
+								sqlite3 hashtag <<< "delete from '"$content_text"' where user_id='"$user_id"';"
+								answer_text="You have unsubscribed from this tag."
+								if [[ ! "$(sqlite3 hashtag <<< "select * from '"$content_text"';")" ]]; then
+									sqlite3 hashtag <<< "drop table '"$content_text"';"
+								fi
+							else
+								answer_text="You are not subscribed to this hashtag."
+							fi
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$message_id" \
+								--data-urlencode "text=$answer_text"
+						;;
+						'hashtag -l'*)
+							if [[ $content_text ]]; then
+								answer_text=""
+								for user in $(sqlite3 hashtag <<< "select user_id from '"$content_text"';"); do
+									username="$(curl -s "$tele_url/getChatMember" \
+										--data-urlencode "chat_id=$chat_id" \
+										--data-urlencode "user_id=$user" | jq '.result.user.username' | sed 's/"//g')"
+									if [[ $username != 'null' ]]; then
+										answer_text="$answer_text $username"
+									fi
+								done
+							else
+								answer_text=""
+								for hashtag in $(sqlite3 hashtag <<< "select name from sqlite_master;"); do
+									if [[ $(sqlite3 hashtag <<< "select user_id from '"$hashtag"' where user_id=$user_id;") ]]; then
+										answer_text="$answer_text "'#'"$hashtag"
+									fi
+								done
+							fi
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$message_id" \
+								--data-urlencode "text=$answer_text"
+						;;
+						'hashtag -h'*)
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$message_id" \
+								--data-urlencode "text=$(cat hashtag_help.txt)"
+						;;
+					esac
+				;;
 				'ping'*)
 					curl -s "$tele_url/sendMessage" \
 						--data-urlencode "chat_id=$chat_id" \
 						--data-urlencode "reply_to_message_id=$message_id" \
 						--data-urlencode "text=pong"
+				;;
+				'sources'*)
+					curl -s "$tele_url/sendMessage" \
+						--data-urlencode "chat_id=$chat_id" \
+						--data-urlencode "reply_to_message_id=$message_id" \
+						--data-urlencode "text=https://gitlab.com/madicine6/eBashBot"
+				;;
+				*)
+					if [[ $(echo "$message_text" | grep '#') ]]; then
+						message_text="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort | uniq)"
+						for word in $message_text; do
+							hashtag="$(echo $word | sed 's/.//')"
+							if [[ "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
+								message_text=""
+								message_id="$(echo "$updates" | jq ".result[$i].message.message_id")"
+								for users in $(sqlite3 hashtag <<< "select user_id from '"$hashtag"';"); do
+									username="@$(curl -s "$tele_url/getChatMember" \
+										--data-urlencode "chat_id=$chat_id" \
+										--data-urlencode "user_id=$users" | jq '.result.user.username' | sed 's/"//g')"
+									if [[ $username != '@null' ]]; then
+										message_text="$message_text $username"
+									fi
+								done
+								curl -s "$tele_url/sendMessage" \
+									--data-urlencode "chat_id=$chat_id" \
+									--data-urlencode "reply_to_message_id=$message_id" \
+									--data-urlencode "text=$message_text"
+							fi
+						done
+					fi
 				;;
 			esac
 			} &
