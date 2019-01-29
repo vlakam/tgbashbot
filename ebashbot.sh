@@ -21,6 +21,11 @@ reply_id() {
 	reply_id="$(echo "$updates" | jq ".result[$i].message.reply_to_message.message_id")"
 }
 
+temp='/tmp/hashusers'
+temp() {
+	echo "$1" > "$temp"
+}
+
 while true; do
 	ping -c1 $(echo "$tele_url" | cut -d '/' -f 3) 2>&1 > /dev/null && {
 		updates=$(curl -s "$tele_url/getUpdates" \
@@ -179,22 +184,31 @@ while true; do
 							if [[ $content_text ]]; then
 								answer_text=""
 								for user in $(sqlite3 hashtag <<< "select user_id from '"$content_text"';"); do
+								{
 									username="$(curl -s "$tele_url/getChatMember" \
 										--data-urlencode "chat_id=$chat_id" \
 										--data-urlencode "user_id=$user" | jq '.result.user.username' | sed 's/"//g')"
 									if [[ $username != 'null' ]]; then
 										answer_text="$answer_text $username"
+										temp "$answer_text"
 									fi
+								} &
 								done
+								wait
 							else
 								answer_text=""
 								for hashtag in $(sqlite3 hashtag <<< "select name from sqlite_master;"); do
+								{
 									if [[ $(sqlite3 hashtag <<< "select user_id from '"$hashtag"' where user_id=$user_id;") ]]; then
 										answer_text="$answer_text "'#'"$hashtag"
+										temp "$answer_text"
 									fi
+								} &
 								done
+								wait
 							fi
-							send "$chat_id" "$(message_id)" "$answer_text"
+							send "$chat_id" "$(message_id)" "$(cat "$temp")"
+							rm "$temp"
 						;;
 						'hashtag -h'*)
 							send "$chat_id" "$(message_id)" "$(cat hashtag_help.txt)"
@@ -215,14 +229,19 @@ while true; do
 							if [[ "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
 								answer_text=""
 								for users in $(sqlite3 hashtag <<< "select user_id from '"$hashtag"';"); do
+									{
 									username="@$(curl -s "$tele_url/getChatMember" \
 										--data-urlencode "chat_id=$chat_id" \
 										--data-urlencode "user_id=$users" | jq '.result.user.username' | sed 's/"//g')"
 									if [[ $username != '@null' ]]; then
 										answer_text="$answer_text $username"
+										temp "$answer_text"
 									fi
+									} &
 								done
-								send "$chat_id" "$(message_id)" "$answer_text"
+								wait
+								send "$chat_id" "$(message_id)" "$(cat "$temp")"
+								rm "$temp"
 							fi
 						done
 					fi
