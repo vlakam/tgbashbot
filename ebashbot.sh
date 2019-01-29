@@ -33,9 +33,9 @@ while true; do
 			date +%F-%T >> ebash.log
 			echo "$updates" | jq ".result[$i]" >> ebash.log
 			chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
-			[[ $reply_text == 'null' ]] && reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
-			message_text="$(echo "$updates" | jq ".result[$i].message.text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
-			[[ $message_text == 'null' ]] && message_text="$(echo "$updates" | jq ".result[$i].message.caption" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+			message_text="$(echo "$updates" | jq ".result[$i].message.text")"
+			[[ $message_text == 'null' ]] && message_text="$(echo "$updates" | jq ".result[$i].message.caption")"
+			message_text="$(echo "$message_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 			case $message_text in
 				's/'*|'s#'*|'y/'*)
 					reply_id
