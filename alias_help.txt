@@ -1,0 +1,10 @@
+Usage:
+
+alias [argument] <name>
+
+  <name>  Use alias.
+  -h  Show this help.
+  -l  Show all existing aliases.
+  -lm  Show aliases that you own.
+  -a <name>  Add alias for replied message.
+  -r <name>  Delete alias.
