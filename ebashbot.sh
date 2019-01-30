@@ -21,6 +21,14 @@ reply_id() {
 	reply_id="$(echo "$updates" | jq ".result[$i].message.reply_to_message.message_id")"
 }
 
+piccheck() {
+	reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.text")"
+	if [[ $reply_text == 'null' ]]; then
+		reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption")"
+	fi
+	echo "$reply_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//'
+}
+
 while true; do
 	ping -c1 $(echo "$tele_url" | cut -d '/' -f 3) 2>&1 > /dev/null && {
 		updates=$(curl -s "$tele_url/getUpdates" \
@@ -40,7 +48,7 @@ while true; do
 				's/'*|'s#'*|'y/'*)
 					reply_id
 					if [[ "$reply_id" != 'null' ]]; then
-						send "$chat_id" "$reply_id" "$(echo -e "$(echo "$updates" | jq ".result[$i].message.reply_to_message.text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')" | timeout 0.1s sed -E --sandbox "$message_text")"
+						send "$chat_id" "$reply_id" "$(piccheck | timeout 0.1s sed -E --sandbox "$message_text")"
 					fi
 				;;
 				'grep '*|'cut '*)
@@ -55,7 +63,7 @@ while true; do
 								fi
 							done
 							if [[ "$file_found" != '1' ]]; then
-								send "$chat_id" "$reply_id" "(echo -e "$(echo "$updates" | jq ".result[$i].message.reply_to_message.text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')" | eval "$message_text")"
+								send "$chat_id" "$reply_id" "$(piccheck | eval "$message_text")"
 							else
 								file_found=0
 							fi
