@@ -1,6 +1,13 @@
 #!/bin/bash
 
-tele_url="$1"
+api_url="$1"
+token="$2"
+host="$3"
+pic_path="$4"
+pic_name="$5"
+clarifai_key="$6"
+tele_url="$api_url/bot$token"
+
 last_id=0
 if [[ ! -f alias ]]; then
 	sqlite3 alias <<< 'create table alias(name varchar(10), user_id smallint, chat_id smallint, reply_id smallint, timestamp smallint);'
@@ -21,12 +28,45 @@ reply_id() {
 	reply_id="$(echo "$updates" | jq ".result[$i].message.reply_to_message.message_id")"
 }
 
-piccheck() {
-	reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.text")"
-	if [[ $reply_text == 'null' ]]; then
-		reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption")"
+reply_text() {
+	reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.$piccheck" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+}
+
+get_hashtags() {
+	rec_hashtags=""
+	if [[ $1 == 'reply' ]]; then
+		reply='.reply_to_message'
 	fi
-	echo "$reply_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//'
+	file_id_num="$(echo "$updates" | jq -r ".result[$i].message$reply.photo | length")"
+	if [[ $file_id_num != 0 ]]; then
+		file_id="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_id")"
+		file_size="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_size")"
+		file_path="$(curl --data-urlencode "file_id=$file_id" "$tele_url/getFile" | jq ".result.file_path" | tr -d '"')"
+		curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name"
+		clarifai="$(curl -X POST \
+			-H "Authorization: Key $clarifai_key" \
+			-H "Content-Type: application/json" \
+			-d '
+				{
+					"inputs": [
+						{
+							"data": {
+								"image": {
+									"url": "'$host'/'$pic_name'"
+								}
+							}
+						}
+					]
+				}'\
+			https://api.clarifai.com/v2/models/aaa03c23b3724a16a56b629203edc62c/outputs | jq ".outputs[0].data.concepts")"
+		rm image_serve/image.png
+		clarifai_length="$(echo "$clarifai" | jq ". | length")"
+		rec_hashtags=""
+		for ((rec_num=0; rec_num<"$clarifai_length"; rec_num++)); do
+			hashtag="$(echo $clarifai | jq ".[$rec_num].name" | sed 's/"//g;s/ /_/g;s/-//g')"
+			rec_hashtags="$rec_hashtags "'#'"$hashtag"
+		done
+	fi
 }
 
 while true; do
@@ -37,35 +77,46 @@ while true; do
 		updates_count=$(echo "$updates" | jq -r ".result | length")
 		last_id=$(echo "$updates" | jq -r ".result[$(( "$updates_count" - 1 ))].update_id")
 		for ((i=0; i<"$updates_count"; i++)); do
-			{
+			(
 			date +%F-%T >> ebash.log
 			echo "$updates" | jq ".result[$i]" >> ebash.log
 			chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
 			message_text="$(echo "$updates" | jq ".result[$i].message.text")"
-			[[ $message_text == 'null' ]] && message_text="$(echo "$updates" | jq ".result[$i].message.caption")"
+			if [[ $message_text == 'null' ]]; then
+				piccheck='caption'
+				message_text="$(echo "$updates" | jq ".result[$i].message.$piccheck")"
+			else
+				piccheck='text'
+			fi
 			message_text="$(echo "$message_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 			case $message_text in
 				's/'*|'s#'*|'y/'*)
 					reply_id
 					if [[ "$reply_id" != 'null' ]]; then
-						send "$chat_id" "$reply_id" "$(piccheck | timeout 0.1s sed -E --sandbox "$message_text")"
+						reply_text
+						if [[ "$reply_text" != 'null' ]]; then
+							send "$chat_id" "$reply_id" "$(echo "$reply_text" | timeout 0.1s sed -E --sandbox "$message_text")"
+						fi
 					fi
 				;;
-				'grep '*|'cut '*)
+				'grep '*|'cut '*|'rev'|'bc')
 					reply_id
 					if [[ "$reply_id" != 'null' ]]; then
-						message_text="$(echo "$message_text" | tr -d '(){}`<>;|&$')"
-						if [[ ! "$(echo "$message_text" | grep -i 'recurs\|--help\|-.*r')" ]]; then
-							for f in ${message_text//=/ }; do
-								if [[ -e "$f" ]]; then
-									file_found=1
-									break
+						reply_text
+						if [[ "$reply_text" != 'null' ]]; then
+							message_text="$(echo "$message_text" | tr -d '(){}`<>;|&$')"
+							if [[ ! "$(echo "$message_text" | grep -i 'recurs\|--help\|-.*r')" ]]; then
+								for f in ${message_text//=/ }; do
+									if [[ -e "$f" ]]; then
+										file_found=1
+										break
+									fi
+								done
+								if [[ "$file_found" != '1' ]]; then
+									send "$chat_id" "$reply_id" "$(echo "$reply_text" | eval "$message_text")"
+								else
+									file_found=0
 								fi
-							done
-							if [[ "$file_found" != '1' ]]; then
-								send "$chat_id" "$reply_id" "$(piccheck | eval "$message_text")"
-							else
-								file_found=0
 							fi
 						fi
 					fi
@@ -152,7 +203,7 @@ while true; do
 					case $message_text in
 						'hashtag -s'*)
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							if (( $(echo $content_text | wc -m) < 14 )); then
+							if (( $(echo $content_text | wc -m) < 18 )); then
 								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
 									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
 										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
@@ -167,7 +218,7 @@ while true; do
 									answer_text='Hashtag name contains non-alphanumeric characters.'
 								fi
 							else
-								answer_text='Hashtag name should not exceed 12 characters.'
+								answer_text='Hashtag name should not exceed 16 characters.'
 							fi
 							send "$chat_id" "$(message_id)" "$answer_text"
 						;;
@@ -206,6 +257,15 @@ while true; do
 							fi
 							send "$chat_id" "$(message_id)" "$answer_text"
 						;;
+						'hashtag -g'*)
+							reply_id
+							if [[ "$reply_id" != 'null' ]]; then
+								get_hashtags reply
+								if [[ ! -z $rec_hashtags ]]; then
+									send "$chat_id" "$reply_id" "$rec_hashtags"
+								fi
+							fi
+						;;
 						'hashtag -h'*)
 							send "$chat_id" "$(message_id)" "$(cat hashtag_help.txt)"
 						;;
@@ -218,27 +278,44 @@ while true; do
 					send "$chat_id" "$(message_id)" "https://gitlab.com/madicine6/eBashBot"
 				;;
 				*)
-					if [[ $(echo "$message_text" | grep '#') ]]; then
-						answer_text="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort | uniq)"
-						for word in $answer_text; do
-							hashtag="$(echo "$word" | sed 's/.//')"
+					get_hashtags
+					if [[ $(echo "$message_text" | grep '#') ]] || [[ ! -z $rec_hashtags ]]; then
+						hashlist="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort | uniq)"
+					fi
+					if [[ "$rec_hashtags $hashlist" != " " ]]; then
+						post_users=""
+						post_hashtags=""
+						user_id_list=""
+						for word in $rec_hashtags $hashlist; do
+							hashtag="${word:1}"
 							if [[ "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
-								answer_text=""
+								mention=0
 								for users in $(sqlite3 hashtag <<< "select user_id from '"$hashtag"';"); do
-									username="@$(curl -s "$tele_url/getChatMember" \
-										--data-urlencode "chat_id=$chat_id" \
-										--data-urlencode "user_id=$users" | jq '.result.user.username' | sed 's/"//g')"
-									if [[ $username != '@null' ]]; then
-										answer_text="$answer_text $username"
+									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
+										user_id_list="$user_id_list $users"
+										username="@$(curl -s "$tele_url/getChatMember" \
+											--data-urlencode "chat_id=$chat_id" \
+											--data-urlencode "user_id=$users" | jq '.result.user.username' | sed 's/"//g')"
+										if [[ $username != '@null' ]]; then
+											mention=1
+											post_users="$post_users $username"
+										fi
+									else
+										mention=1
 									fi
 								done
-								send "$chat_id" "$(message_id)" "$answer_text"
+								if [[ $mention == 1 ]]; then
+									post_hashtags="$post_hashtags "'#'"$hashtag"
+								fi
 							fi
 						done
+						if [[ ! -z $post_hashtags ]]; then
+							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n$post_users")"
+						fi
 					fi
 				;;
 			esac
-			} &
+			) &
 		done
 	} || sleep 1
 done
