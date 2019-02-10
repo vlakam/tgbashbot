@@ -310,7 +310,7 @@ while true; do
 							fi
 						done
 						if [[ ! -z $post_hashtags ]]; then
-							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n$post_users")"
+							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
 						fi
 					fi
 				;;
