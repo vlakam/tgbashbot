@@ -6,6 +6,7 @@ hashtag [argument] <name>
   -h  Show this help message.
   -s  Subscribe to a hashtag.
   -u  Unsubscribe from a hashtag.
+  -g  Get hashtags for the image.
 
   -l  [hashtag]
 If hashtag is specified, shows all users subscribed to it. If not, then shows hashtags that you are subscribed to.
