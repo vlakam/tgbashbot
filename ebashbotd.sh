@@ -1,13 +1,21 @@
 #!/bin/bash
 
 token=''
-tele_url="https://api.telegram.org/bot$token"
+api_url="https://api.telegram.org"
 file="/tmp/ebashbotd"
+host=''
+pic_path='image_serve'
+pic_name='image.png'
+clarifai_key=''
+
+start_bot() {
+	./ebashbot.sh "$api_url" "$token" "$host" "$pic_path" "$pic_name" "$clarifai_key"
+}
 
 [[ "$1" != "slave" ]] && {
 	echo "$$" > "$file"
 	./ebashbotd.sh slave &
-	./ebashbot.sh "$tele_url" &
+	start_bot &
 }
 
 while true; do
@@ -15,7 +23,7 @@ while true; do
 		ping -c1 $(echo "$tele_url" | cut -d '/' -f 3) && {
 			(( "$(curl -s "$tele_url/getUpdates" | jq -r ".result | length")" >= 10 )) && {
 				pkill ebashbot.sh
-				./ebashbot.sh "$tele_url" &
+				start_bot &
 			}
 		}
 		sleep 60
