@@ -29,7 +29,11 @@ reply_id() {
 }
 
 reply_text() {
-	reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.$piccheck" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+	reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.text")"
+	if [[ $reply_text == 'null' ]]; then
+		reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption")"
+	fi
+	reply_text="$(echo $reply_text | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 }
 
 get_hashtags() {
@@ -83,10 +87,7 @@ while true; do
 			chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
 			message_text="$(echo "$updates" | jq ".result[$i].message.text")"
 			if [[ $message_text == 'null' ]]; then
-				piccheck='caption'
-				message_text="$(echo "$updates" | jq ".result[$i].message.$piccheck")"
-			else
-				piccheck='text'
+				message_text="$(echo "$updates" | jq ".result[$i].message.caption")"
 			fi
 			message_text="$(echo "$message_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 			case $message_text in
@@ -95,11 +96,11 @@ while true; do
 					if [[ "$reply_id" != 'null' ]]; then
 						reply_text
 						if [[ "$reply_text" != 'null' ]]; then
-							send "$chat_id" "$reply_id" "$(echo "$reply_text" | timeout 0.1s sed -E --sandbox "$message_text")"
+							send "$chat_id" "$reply_id" "$(echo -e "$reply_text" | timeout 0.1s sed -E --sandbox "$message_text")"
 						fi
 					fi
 				;;
-				'grep '*|'cut '*|'rev'|'bc')
+				'grep '*|'cut '*|'rev'|'bc'|'bc -l')
 					reply_id
 					if [[ "$reply_id" != 'null' ]]; then
 						reply_text
@@ -113,7 +114,8 @@ while true; do
 									fi
 								done
 								if [[ "$file_found" != '1' ]]; then
-									send "$chat_id" "$reply_id" "$(echo "$reply_text" | eval "$message_text")"
+#									answer_text="$(bash -c )"
+									send "$chat_id" "$reply_id" "$(echo "$reply_text" | eval "$message_text"' & pid='"$i"'; sleep 0.1; kill '"$pid" | head -n 10)"
 								else
 									file_found=0
 								fi
