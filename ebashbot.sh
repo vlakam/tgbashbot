@@ -33,7 +33,7 @@ reply_text() {
 	if [[ $reply_text == 'null' ]]; then
 		reply_text="$(echo "$updates" | jq ".result[$i].message.reply_to_message.caption")"
 	fi
-	reply_text="$(echo $reply_text | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
+	reply_text="$(echo "$reply_text" | sed --sandbox 's#\\"#"#g;s#\\\\#\\#g;s/^"//;s/"$//')"
 }
 
 get_hashtags() {
@@ -44,7 +44,6 @@ get_hashtags() {
 	file_id_num="$(echo "$updates" | jq -r ".result[$i].message$reply.photo | length")"
 	if [[ $file_id_num != 0 ]]; then
 		file_id="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_id")"
-		file_size="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_size")"
 		file_path="$(curl --data-urlencode "file_id=$file_id" "$tele_url/getFile" | jq ".result.file_path" | tr -d '"')"
 		curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name"
 		clarifai="$(curl -X POST \
@@ -114,7 +113,6 @@ while true; do
 									fi
 								done
 								if [[ "$file_found" != '1' ]]; then
-#									answer_text="$(bash -c )"
 									send "$chat_id" "$reply_id" "$(echo "$reply_text" | eval "$message_text"' & pid='"$i"'; sleep 0.1; kill '"$pid" | head -n 10)"
 								else
 									file_found=0
@@ -272,6 +270,42 @@ while true; do
 							send "$chat_id" "$(message_id)" "$(cat hashtag_help.txt)"
 						;;
 					esac
+				;;
+				'distort'*)
+					message_text="${message_text:8}"
+					if [[ $message_text =~ ^[[:digit:]]+$ ]]; then
+						if (( $message_text < 100 )); then
+							distort_value=$message_text
+						else
+							distort_value=100
+						fi
+					else
+						distort_value=50
+					fi
+					reply_id
+					if [[ "$reply_id" != 'null' ]]; then
+						reply='.reply_to_message'
+					else
+						reply_id="$(message_id)"
+					fi
+					file_id_num="$(echo "$updates" | jq -r ".result[$i].message$reply.photo | length")"
+					if [[ $file_id_num != 0 ]]; then
+						file_id="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_id")"
+						file_path="$(curl --data-urlencode "file_id=$file_id" "$tele_url/getFile" | jq ".result.file_path" | tr -d '"')"
+						curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name"
+						dimensions="$(identify -format '%wx%h' $pic_path/$pic_name)"
+						convert "$pic_path/$pic_name" \
+							-liquid-rescale "$(( 101 - $distort_value ))"%x"$(( 101 - $distort_value ))"%! \
+							-resize "$dimensions"! \
+							"$pic_path/$pic_name"
+ 						curl -s "$tele_url/sendPhoto" \
+							-F "chat_id=$chat_id" \
+							-F "reply_to_message_id=$reply_id" \
+							-F "photo=@./$pic_path/$pic_name"
+						rm "$pic_path/$pic_name"
+					else
+						send "$chat_id" "$(message_id)" "No image specified!"
+					fi
 				;;
 				'ping'*)
 					send "$chat_id" "$(message_id)" "pong"
