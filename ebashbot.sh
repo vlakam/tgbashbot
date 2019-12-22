@@ -115,7 +115,7 @@ while true; do
 									fi
 								done
 								if [[ "$file_found" != '1' ]]; then
-									send "$chat_id" "$reply_id" "$(echo -e "$reply_text" | eval "$message_text"' & pid='"$i"'; sleep 0.1; kill '"$pid" | head -n 10)"
+									send "$chat_id" "$reply_id" "$(echo -e "$reply_text" | eval "$message_text"' & pid='"$?"'; sleep 1; kill '"$pid" | head -n 10)"
 								else
 									file_found=0
 								fi
