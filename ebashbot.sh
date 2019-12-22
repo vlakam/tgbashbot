@@ -1,11 +1,12 @@
 #!/bin/bash
 
+cd "$(dirname "$0")"
+
 api_url="$1"
 token="$2"
 host="$3"
 pic_path="$4"
-pic_name="$5"
-clarifai_key="$6"
+clarifai_key="$5"
 tele_url="$api_url/bot$token"
 
 last_id=0
@@ -37,6 +38,7 @@ reply_text() {
 }
 
 get_hashtags() {
+	pic_name="$(cat /dev/urandom | tr -cd '[:alnum:]' | head -c 8).png"
 	rec_hashtags=""
 	if [[ $1 == 'reply' ]]; then
 		reply='.reply_to_message'
@@ -62,7 +64,7 @@ get_hashtags() {
 					]
 				}'\
 			https://api.clarifai.com/v2/models/aaa03c23b3724a16a56b629203edc62c/outputs | jq ".outputs[0].data.concepts")"
-		rm image_serve/image.png
+		rm "$pic_path/$pic_name"
 		clarifai_length="$(echo "$clarifai" | jq ". | length")"
 		rec_hashtags=""
 		for ((rec_num=0; rec_num<"$clarifai_length"; rec_num++)); do
@@ -113,7 +115,7 @@ while true; do
 									fi
 								done
 								if [[ "$file_found" != '1' ]]; then
-									send "$chat_id" "$reply_id" "$(echo "$reply_text" | eval "$message_text"' & pid='"$i"'; sleep 0.1; kill '"$pid" | head -n 10)"
+									send "$chat_id" "$reply_id" "$(echo -e "$reply_text" | eval "$message_text"' & pid='"$i"'; sleep 0.1; kill '"$pid" | head -n 10)"
 								else
 									file_found=0
 								fi
@@ -129,7 +131,7 @@ while true; do
 							if [[ "$reply_id" != 'null' ]]; then
 								message_text="${message_text:9}"
 								if (( $(echo $message_text | wc -m) < 14 )); then
-									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" ]]; then
+									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< 'select chat_id from alias where name = '"$message_text"' and chat_id='"$chat_id"';')" ]]; then
 										user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
 										timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
 										sqlite3 alias <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id,$timestamp);"
@@ -147,10 +149,10 @@ while true; do
 						;;
 						'alias -lm'*)
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							send "$chat_id" "$(message_id)" "$(sqlite3 alias <<< "select name from alias where user_id = '"$user_id"';" | sort | tr '\n' ' ')"
+							send "$chat_id" "$(message_id)" "$(sqlite3 alias <<< 'select name from alias where user_id = '"$user_id"' and chat_id = '"$chat_id"';' | sort | tr '\n' ' ')"
 						;;
 						'alias -l'*)
-							answer_text="$(sqlite3 alias <<< "select name from alias;" | sort | tr '\n' ' ')"
+							answer_text="$(sqlite3 alias <<< 'select name from alias where chat_id='"$chat_id"';' | sort | tr '\n' ' ')"
 							message_length=4096
 							if (( $(echo "$answer_text" | wc -m) > $message_length )); then
 								pile=''
@@ -184,13 +186,13 @@ while true; do
 						;;
 						*)
 							message_text="${message_text:6}"
-							if [[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"';")" ]]; then
+							if [[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"' and chat_id = '"$chat_id"';")" ]]; then
 								curl -s "$tele_url/forwardMessage" \
 									--data-urlencode "chat_id=$chat_id" \
 									--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
 									--data-urlencode "message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")"
 								timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
-								sqlite3 alias <<< "update alias set timestamp=$timestamp where name='"$message_text"';"
+								sqlite3 alias <<< "update alias set timestamp=$timestamp where name='"$message_text"' and chat_id = '"$chat_id"';"
 							fi
 						;;
 					esac
@@ -292,17 +294,18 @@ while true; do
 					if [[ $file_id_num != 0 ]]; then
 						file_id="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_id")"
 						file_path="$(curl --data-urlencode "file_id=$file_id" "$tele_url/getFile" | jq ".result.file_path" | tr -d '"')"
-						curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name"
-						dimensions="$(identify -format '%wx%h' $pic_path/$pic_name)"
-						convert "$pic_path/$pic_name" \
+						pic_name_gen="$(cat /dev/urandom | tr -cd "[:alnum:]" | head -c 8).png"
+						curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name_gen"
+						dimensions="$(identify -format '%wx%h' $pic_path/$pic_name_gen)"
+						convert "$pic_path/$pic_name_gen" \
 							-liquid-rescale "$(( 101 - $distort_value ))"%x"$(( 101 - $distort_value ))"%! \
 							-resize "$dimensions"! \
-							"$pic_path/$pic_name"
+							"$pic_path/$pic_name_gen"
  						curl -s "$tele_url/sendPhoto" \
 							-F "chat_id=$chat_id" \
 							-F "reply_to_message_id=$reply_id" \
-							-F "photo=@./$pic_path/$pic_name"
-						rm "$pic_path/$pic_name"
+							-F "photo=@./$pic_path/$pic_name_gen"
+						rm "$pic_path/$pic_name_gen"
 					else
 						send "$chat_id" "$(message_id)" "No image specified!"
 					fi
@@ -313,15 +316,35 @@ while true; do
 				'sources'*)
 					send "$chat_id" "$(message_id)" "https://gitlab.com/madicine6/eBashBot"
 				;;
+				'/me '*)
+					reply_id
+					curl -s "$tele_url/deleteMessage" \
+						--data-urlencode "chat_id=$chat_id" \
+						--data-urlencode "message_id=$(message_id)"
+					user_name="$(echo "$updates" | jq ".result[$i].message.from.first_name" | head -c -2 | tail -c +2)"
+					last_name="$(echo "$updates" | jq ".result[$i].message.from.last_name")"
+					if [[ ! "$last_name" == 'null' ]]; then
+						user_name="$user_name $(echo "$last_name" | head -c -2 | tail -c +2)"
+					fi
+					if [[ "$reply_id" ]]; then
+						curl -s "$tele_url/sendMessage" \
+							--data-urlencode "parse_mode=html" \
+							--data-urlencode "chat_id=$chat_id" \
+							--data-urlencode "reply_to_message_id=$reply_id" \
+							--data-urlencode "text=<i>$(echo "$user_name ${message_text:4}" | sed 's/<i>//g;s/<\/i>//g')</i>"
+					else
+						curl -s "$tele_url/sendMessage" \
+							--data-urlencode "parse_mode=html" \
+							--data-urlencode "chat_id=$chat_id" \
+							--data-urlencode "text=<i>$(echo "$user_name ${message_text:4}" | sed 's/<i>//g;s/<\/i>//g')</i>"
+					fi
+				;;
 				*)
 					get_hashtags
 					if [[ $(echo "$message_text" | grep '#') ]] || [[ ! -z $rec_hashtags ]]; then
-						hashlist="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort | uniq)"
+						hashlist="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort -u)"
 					fi
 					if [[ "$rec_hashtags $hashlist" != " " ]]; then
-						post_users=""
-						post_hashtags=""
-						user_id_list=""
 						for word in $rec_hashtags $hashlist; do
 							hashtag="${word:1}"
 							if [[ "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
@@ -346,12 +369,32 @@ while true; do
 							fi
 						done
 						if [[ ! -z $post_hashtags ]]; then
-							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+							echo -n "$post_hashtags" >> /tmp/post_hashtags
+							if [[ ! -f /tmp/chat_id ]]; then
+								echo "$chat_id" > /tmp/chat_id
+							fi
+							if [[ ! -f /tmp/message_id ]]; then
+								echo "$(message_id)" > /tmp/message_id
+							fi
+							echo -n "$post_users" >> /tmp/post_users
+#							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
 						fi
+
 					fi
 				;;
 			esac
 			) &
+			wait
 		done
-	} || sleep 1
+	if [[ -f /tmp/post_hashtags ]]; then
+		post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+		chat_id="$(cat /tmp/chat_id)"
+		message_id="$(cat /tmp/message_id)"
+		post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+		send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+		rm /tmp/{chat_id,message_id,post_users,post_hashtags}
+		post_users=""
+		post_hashtags=""
+	fi
+	}
 done
