@@ -352,15 +352,18 @@ while true; do
 								for users in $(sqlite3 hashtag <<< "select user_id from '"$hashtag"';"); do
 									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
 										user_id_list="$user_id_list $users"
-										username="@$(curl -s "$tele_url/getChatMember" \
+										userinfo="$(curl -s "$tele_url/getChatMember" \
 											--data-urlencode "chat_id=$chat_id" \
-											--data-urlencode "user_id=$users" | jq '.result.user.username' | sed 's/"//g')"
-										if [[ $username != '@null' ]]; then
+											--data-urlencode "user_id=$users")"
+										username="@$(echo "$userinfo" | jq -r '.result.user.username')" #| sed 's/"//g')"
+echo $userinfo
+										status="$(echo "$userinfo" | jq -r '.result.status')"
+										if [[ $username != '@null' ]] && [[ $status != 'left' ]]; then
 											mention=1
 											post_users="$post_users $username"
 										fi
-									else
-										mention=1
+#									else
+#										mention=1
 									fi
 								done
 								if [[ $mention == 1 ]]; then
@@ -386,15 +389,15 @@ while true; do
 			) &
 			wait
 		done
-	    if [[ -f /tmp/post_hashtags ]]; then
-		    post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-    		chat_id="$(cat /tmp/chat_id)"
-	    	message_id="$(cat /tmp/message_id)"
-		    post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-    		send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
-	    	rm /tmp/{chat_id,message_id,post_users,post_hashtags}
-		    post_users=""
-    		post_hashtags=""
-	    fi
+	if [[ -f /tmp/post_hashtags ]]; then
+		post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+		chat_id="$(cat /tmp/chat_id)"
+		message_id="$(cat /tmp/message_id)"
+		post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+		send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+		rm /tmp/{chat_id,message_id,post_users,post_hashtags}
+		post_users=""
+		post_hashtags=""
+	fi
 	}
 done
