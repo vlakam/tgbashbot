@@ -356,14 +356,11 @@ while true; do
 											--data-urlencode "chat_id=$chat_id" \
 											--data-urlencode "user_id=$users")"
 										username="@$(echo "$userinfo" | jq -r '.result.user.username')" #| sed 's/"//g')"
-echo $userinfo
 										status="$(echo "$userinfo" | jq -r '.result.status')"
 										if [[ $username != '@null' ]] && [[ $status != 'left' ]]; then
 											mention=1
 											post_users="$post_users $username"
 										fi
-#									else
-#										mention=1
 									fi
 								done
 								if [[ $mention == 1 ]]; then
@@ -380,7 +377,6 @@ echo $userinfo
 								echo "$(message_id)" > /tmp/message_id
 							fi
 							echo -n "$post_users" >> /tmp/post_users
-#							send "$chat_id" "$(message_id)" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
 						fi
 
 					fi
