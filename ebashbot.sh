@@ -385,15 +385,15 @@ while true; do
 			) &
 			wait
 		done
-    	if [[ -f /tmp/post_hashtags ]]; then
-	    	post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-		    chat_id="$(cat /tmp/chat_id)"
-    		message_id="$(cat /tmp/message_id)"
-	    	post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-		    send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
-    		rm /tmp/{chat_id,message_id,post_users,post_hashtags}
-	    	post_users=""
-		    post_hashtags=""
-    	fi
+        if [[ -f /tmp/post_hashtags ]]; then
+            post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+            chat_id="$(cat /tmp/chat_id)"
+            message_id="$(cat /tmp/message_id)"
+            post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+            send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+            rm /tmp/{chat_id,message_id,post_users,post_hashtags}
+            post_users=""
+            post_hashtags=""
+        fi
 	}
 done
