@@ -74,6 +74,10 @@ get_hashtags() {
 	fi
 }
 
+story(){
+	story="$(curl -s 'https://models.dobro.ai/gpt2/medium/' --data-binary '{"prompt":"'"$*"'","length":50,"num_samples":1}' | jq ".replies[]")"
+}
+
 while true; do
 	ping -c1 $(echo "$tele_url" | cut -d '/' -f 3) 2>&1 > /dev/null && {
 		updates=$(curl -s "$tele_url/getUpdates" \
@@ -209,7 +213,7 @@ while true; do
 								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
 									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
 										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
-											sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
+										sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
 										fi
 										sqlite3 hashtag <<< "insert into '"$content_text"' values($user_id);"
 										answer_text="You have subscribed to hashtag $content_text."
@@ -321,10 +325,10 @@ while true; do
 					curl -s "$tele_url/deleteMessage" \
 						--data-urlencode "chat_id=$chat_id" \
 						--data-urlencode "message_id=$(message_id)"
-					user_name="$(echo "$updates" | jq ".result[$i].message.from.first_name" | head -c -2 | tail -c +2)"
+					user_name="$(echo "$updates" | jq ".result[$i].message.from.first_name")"
 					last_name="$(echo "$updates" | jq ".result[$i].message.from.last_name")"
 					if [[ ! "$last_name" == 'null' ]]; then
-						user_name="$user_name $(echo "$last_name" | head -c -2 | tail -c +2)"
+						user_name="${user_name:1:-1} ${last_name:1:-1}"
 					fi
 					if [[ "$reply_id" ]]; then
 						curl -s "$tele_url/sendMessage" \
@@ -337,6 +341,33 @@ while true; do
 							--data-urlencode "parse_mode=html" \
 							--data-urlencode "chat_id=$chat_id" \
 							--data-urlencode "text=<i>$(echo "$user_name ${message_text:4}" | sed 's/<i>//g;s/<\/i>//g')</i>"
+					fi
+				;;
+				'story'*)
+					reply_id
+					if [[ "$reply_id" != 'null' ]]; then
+						reply_text
+						if [[ "$reply_text" != 'null' ]]; then
+							story "${reply_text//\\}"
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "parse_mode=html" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$reply_id" \
+								--data-urlencode "text=<i>$(echo "$reply_text" | sed 's/<i>//g;s/<\/i>//g')</i>${story:1:-1}"
+						else
+							send "$chat_id" "$(message_id)" "Reply message has no text."
+						fi
+					else
+						if [[ ${message_text:6} ]]; then
+							story "${message_text:6}"
+							curl -s "$tele_url/sendMessage" \
+								--data-urlencode "parse_mode=html" \
+								--data-urlencode "chat_id=$chat_id" \
+								--data-urlencode "reply_to_message_id=$(message_id)" \
+								--data-urlencode "text=<i>$(echo "${message_text:6}" | sed 's/<i>//g;s/<\/i>//g')</i>${story:1:-1}"
+						else
+							send "$chat_id" "$(message_id)" "No text specified."
+						fi
 					fi
 				;;
 				*)
@@ -353,13 +384,13 @@ while true; do
 									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
 										user_id_list="$user_id_list $users"
 										userinfo="$(curl -s "$tele_url/getChatMember" \
-											--data-urlencode "chat_id=$chat_id" \
-											--data-urlencode "user_id=$users")"
-										username="@$(echo "$userinfo" | jq -r '.result.user.username')" #| sed 's/"//g')"
+										--data-urlencode "chat_id=$chat_id" \
+										--data-urlencode "user_id=$users")"
+										username="@$(echo "$userinfo" | jq -r '.result.user.username')"
 										status="$(echo "$userinfo" | jq -r '.result.status')"
 										if [[ $username != '@null' ]] && [[ $status != 'left' ]]; then
-											mention=1
-											post_users="$post_users $username"
+										mention=1
+										post_users="$post_users $username"
 										fi
 									fi
 								done
@@ -378,7 +409,6 @@ while true; do
 							fi
 							echo -n "$post_users" >> /tmp/post_users
 						fi
-
 					fi
 				;;
 			esac
