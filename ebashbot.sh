@@ -409,7 +409,6 @@ while true; do
 							fi
 							echo -n "$post_users" >> /tmp/post_users
 						fi
-
 					fi
 				;;
 			esac
@@ -420,8 +419,18 @@ while true; do
 			post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
 			chat_id="$(cat /tmp/chat_id)"
 			message_id="$(cat /tmp/message_id)"
-			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-			send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u)" #| tr '\n' ' ')"
+			users_num="$(echo -n "$post_users" | wc -l)"
+			users_per_send=5
+			if [[ "$users_num" > "$users_per_send" ]]; then
+				for ((user_offset=1; user_offset<"$users_num"; user_offset="$(( "$user_offset" + "$users_per_send" ))" )); do
+					post_users_chunk="$(echo "$post_users" | tail -n "$(( $users_num - $user_offset + 1 ))" | head -n "$users_per_send" | tr '\n' ' ')"
+					send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n$post_users_chunk")"
+				done
+			else
+				post_users="$(echo "$post_users" | tr '\n' ' ')"
+				send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n${post_users:1}")"
+			fi
 			rm /tmp/{chat_id,message_id,post_users,post_hashtags}
 			post_users=""
 			post_hashtags=""
