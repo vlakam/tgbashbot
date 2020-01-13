@@ -8,6 +8,7 @@ host="$3"
 pic_path="$4"
 clarifai_key="$5"
 tele_url="$api_url/bot$token"
+users_per_send=5
 
 last_id=0
 if [[ ! -f alias ]]; then
@@ -421,7 +422,6 @@ while true; do
 			message_id="$(cat /tmp/message_id)"
 			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u)" #| tr '\n' ' ')"
 			users_num="$(echo -n "$post_users" | wc -l)"
-			users_per_send=5
 			if [[ "$users_num" > "$users_per_send" ]]; then
 				for ((user_offset=1; user_offset<"$users_num"; user_offset="$(( "$user_offset" + "$users_per_send" ))" )); do
 					post_users_chunk="$(echo "$post_users" | tail -n "$(( $users_num - $user_offset + 1 ))" | head -n "$users_per_send" | tr '\n' ' ')"
