@@ -229,7 +229,7 @@ while true; do
 								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
 									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
 										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
-											sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
+										sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
 										fi
 										sqlite3 hashtag <<< "insert into '"$content_text"' values($user_id);"
 										answer_text="You have subscribed to hashtag $content_text."
@@ -385,16 +385,17 @@ while true; do
 									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
 										user_id_list="$user_id_list $users"
 										userinfo="$(curl -s "$tele_url/getChatMember" \
-											--data-urlencode "chat_id=$chat_id" \
-											--data-urlencode "user_id=$users")"
+										--data-urlencode "chat_id=$chat_id" \
+										--data-urlencode "user_id=$users")"
 										username="@$(echo "$userinfo" | jq -r '.result.user.username')"
 										status="$(echo "$userinfo" | jq -r '.result.status')"
-										if [[ $username != '@null' ]] && [[ $status != 'left' ]]; then
-											mention=1
-											post_users="$post_users $username"
+										if [[ $username != '@null' ]] && [[ $status != 'left' ]] && [[ $status != 'kicked' ]]; then
+										mention=1
+										post_users="$post_users $username"
 										fi
 									fi
 								done
+								user_id_list=''
 								if [[ $mention == 1 ]]; then
 									post_hashtags="$post_hashtags "'#'"$hashtag"
 								fi
@@ -420,9 +421,9 @@ while true; do
 			post_hashtags="$(cat /tmp/post_hashtags | tr ' ' '\n' | sort -u | tr '\n' ' ')"
 			chat_id="$(cat /tmp/chat_id)"
 			message_id="$(cat /tmp/message_id)"
-			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u)" #| tr '\n' ' ')"
+			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u)"
 			users_num="$(echo -n "$post_users" | wc -l)"
-			if [[ "$users_num" > "$users_per_send" ]]; then
+			if (( "$users_num" > "$users_per_send" )); then
 				for ((user_offset=1; user_offset<"$users_num"; user_offset="$(( "$user_offset" + "$users_per_send" ))" )); do
 					post_users_chunk="$(echo "$post_users" | tail -n "$(( $users_num - $user_offset + 1 ))" | head -n "$users_per_send" | tr '\n' ' ')"
 					send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n$post_users_chunk")"
