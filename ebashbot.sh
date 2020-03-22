@@ -363,7 +363,7 @@ while true; do
 							send "$chat_id" "$(message_id)" "Reply message has no text."
 						fi
 					else
-						if [[ ${message_text:6} ]]; then
+						if [[ "${message_text:6}" ]]; then
 							story "${message_text:6}"
 							send_formatted 'reply' "$chat_id" "$(message_id)" "${message_text:6}" "$story"
 						else
@@ -371,9 +371,37 @@ while true; do
 						fi
 					fi
 				;;
+				'covid'*)
+					message_text="${message_text:6}"
+					if [[ "$message_text" ]]; then
+						covid_response="$(curl -s "https://coronavirus-19-api.herokuapp.com/countries/$(echo "$message_text" | sed --sandbox 's/[[:blank:]]/%20/g')")"
+						if [[ "$covid_response" == "Country not found" ]]; then
+							answer_text="$covid_response"
+						else
+							answer_text="Covid-19 information for $(echo "$covid_response" | jq -r ".country"):
+
+Cases total: $(echo "$covid_response" | jq -r ".cases")
+Cases today: $(echo "$covid_response" | jq -r ".todayCases")
+Deaths total: $(echo "$covid_response" | jq -r ".deaths")
+Deaths today: $(echo "$covid_response" | jq -r ".todayDeaths")
+Recovered total: $(echo "$covid_response" | jq -r ".recovered")
+Active cases: $(echo "$covid_response" | jq -r ".active")
+In critical condition: $(echo "$covid_response" | jq -r ".critical")
+Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")"
+						fi
+					else
+						covid_response="$(curl -s https://coronavirus-19-api.herokuapp.com/all)"
+						answer_text="Covid-19 worldwide information:
+
+Cases: $(echo "$covid_response" | jq -r ".cases")
+Deaths: $(echo "$covid_response" | jq -r ".deaths")
+Recovered: $(echo "$covid_response" | jq -r ".recovered")"
+					fi
+					send "$chat_id" "$(message_id)" "$answer_text"
+				;;
 				*)
 					get_hashtags
-					if [[ $(echo "$message_text" | grep '#') ]] || [[ ! -z $rec_hashtags ]]; then
+					if [[ "$(echo "$message_text" | grep '#')" ]] || [[ ! -z "$rec_hashtags" ]]; then
 						hashlist="$(echo "$message_text" | grep -o '#[[:alnum:]]*' | tr " " "\n" | sort -u)"
 					fi
 					if [[ "$rec_hashtags $hashlist" != " " ]]; then
