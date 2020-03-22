@@ -9,6 +9,7 @@ pic_path="$4"
 clarifai_key="$5"
 tele_url="$api_url/bot$token"
 users_per_send=5
+covid_api='https://corona.lmao.ninja'
 
 last_id=0
 if [[ ! -f alias ]]; then
@@ -92,6 +93,10 @@ get_hashtags() {
 
 story(){
 	story="$(curl -s 'https://models.dobro.ai/gpt2/medium/' --data-binary '{"prompt":"'"$*"'","length":50,"num_samples":1}' | jq -r ".replies[]")"
+}
+
+covid_top(){
+	curl -s "$covid_api/countries?sort=$1" | jq -r '.[0,1,2,3,4,5,6,7,8,9] | "\(.country) - \(.'"$1"')"'
 }
 
 while true; do
@@ -372,13 +377,76 @@ while true; do
 					fi
 				;;
 				'covid'*)
-					message_text="${message_text:6}"
-					if [[ "$message_text" ]]; then
-						covid_response="$(curl -s "https://coronavirus-19-api.herokuapp.com/countries/$(echo "$message_text" | sed --sandbox 's/[[:blank:]]/%20/g')")"
-						if [[ "$covid_response" == "Country not found" ]]; then
-							answer_text="$covid_response"
-						else
-							answer_text="Covid-19 information for $(echo "$covid_response" | jq -r ".country"):
+					case $message_text in
+						'covid')
+							covid_response="$(curl -s "$covid_api/all")"
+							covid_lastupdated="$(echo "$covid_response" | jq -r ".updated")"
+							answer_text="Covid-19 worldwide information:
+
+Cases: $(echo "$covid_response" | jq -r ".cases")
+Deaths: $(echo "$covid_response" | jq -r ".deaths")
+Recovered: $(echo "$covid_response" | jq -r ".recovered")
+
+Last time updated: $(date -d @${covid_lastupdated::-3})"
+						;;
+						'covid -t '*)
+							message_text="${message_text:9}"
+							case $message_text in
+								'cases'*)
+									message_text="${message_text:5}"
+									if [[ "$message_text" ]]; then
+										case $message_text in
+											' today')
+												answer_text="Top 10 countries by new cases today:\n\n$(covid_top todayCases)"
+											;;
+											' per1kk')
+												answer_text="Top 10 countries by cases per million:\n\n$(covid_top casesPerOneMillion)"
+											;;
+											*)
+												answer_text='Wrong parameter specified'
+											;;
+										esac
+									else
+										answer_text="Top 10 countries by cases total:\n\n$(covid_top cases)"
+									fi
+								;;
+								'deaths'*)
+									message_text="${message_text:6}"
+									if [[ "$message_text" ]]; then
+										if [[ "$message_text" == ' today' ]]; then
+											answer_text="Top 10 countries by deaths today:\n\n$(covid_top todayDeaths)"
+										else
+											answer_text='Wrong parameter specified'
+										fi
+									else
+										answer_text="Top 10 countries by deaths:\n\n$(covid_top deaths)"
+									fi
+								;;
+								'recovered')
+									answer_text="Top 10 countries by recovery cases:\n\n$(covid_top recovered)"
+								;;
+								'active')
+									answer_text="Top 10 countries by active cases:\n\n$(covid_top active)"
+								;;
+								'critical')
+									answer_text="Top 10 countries by critical cases:\n\n$(covid_top critical)"
+								;;
+								*)
+									answer_text='Wrong parameter specified'
+								;;
+							esac
+						;;
+						'covid -h')
+							answer_text="$(cat covid_help.txt)"
+						;;
+						'covid '*)
+							message_text="${message_text:6}"
+							if [[ ! "$(echo "$message_text" | tr -d '[:alpha:]')" ]]; then
+								covid_response="$(curl -s "$covid_api/countries/$(echo "$message_text" | sed --sandbox 's/[[:blank:]]/%20/g')")"
+								if [[ "$covid_response" == "Country not found" ]]; then
+									answer_text="$covid_response"
+								else
+									answer_text="Covid-19 information for $(echo "$covid_response" | jq -r ".country"):
 
 Cases total: $(echo "$covid_response" | jq -r ".cases")
 Cases today: $(echo "$covid_response" | jq -r ".todayCases")
@@ -388,16 +456,13 @@ Recovered total: $(echo "$covid_response" | jq -r ".recovered")
 Active cases: $(echo "$covid_response" | jq -r ".active")
 In critical condition: $(echo "$covid_response" | jq -r ".critical")
 Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")"
-						fi
-					else
-						covid_response="$(curl -s https://coronavirus-19-api.herokuapp.com/all)"
-						answer_text="Covid-19 worldwide information:
-
-Cases: $(echo "$covid_response" | jq -r ".cases")
-Deaths: $(echo "$covid_response" | jq -r ".deaths")
-Recovered: $(echo "$covid_response" | jq -r ".recovered")"
-					fi
-					send "$chat_id" "$(message_id)" "$answer_text"
+								fi
+							else
+								answer_text='Wrong parameter specified'
+							fi
+						;;
+					esac
+					send "$chat_id" "$(message_id)" "$(echo -e "$answer_text")"
 				;;
 				*)
 					get_hashtags
