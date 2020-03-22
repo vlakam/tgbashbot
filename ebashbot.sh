@@ -151,7 +151,7 @@ while true; do
 							if [[ "$reply_id" != 'null' ]]; then
 								message_text="${message_text:9}"
 								if (( $(echo $message_text | wc -m) < 14 )); then
-									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< 'select chat_id from alias where name = '"$message_text"' and chat_id='"$chat_id"';')" ]]; then
+									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< "select chat_id from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
 										user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
 										timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
 										sqlite3 alias <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id,$timestamp);"
@@ -169,10 +169,10 @@ while true; do
 						;;
 						'alias -lm'*)
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							send "$chat_id" "$(message_id)" "$(sqlite3 alias <<< 'select name from alias where user_id = '"$user_id"' and chat_id = '"$chat_id"';' | sort | tr '\n' ' ')"
+							send "$chat_id" "$(message_id)" "$(sqlite3 alias <<< "select name from alias where user_id = '$user_id' and chat_id = '$chat_id';" | sort | tr '\n' ' ')"
 						;;
 						'alias -l'*)
-							answer_text="$(sqlite3 alias <<< 'select name from alias where chat_id='"$chat_id"';' | sort | tr '\n' ' ')"
+							answer_text="$(sqlite3 alias <<< "select name from alias where chat_id='$chat_id';" | sort | tr '\n' ' ')"
 							message_length=4096
 							if (( $(echo "$answer_text" | wc -m) > $message_length )); then
 								pile=''
@@ -193,7 +193,7 @@ while true; do
 						'alias -r '*)
 							message_text="${message_text:9}"
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							if [[ "$(sqlite3 alias <<< "select user_id from alias where name = '"$message_text"';")" == "$user_id" ]]; then
+							if [[ "$(sqlite3 alias <<< "select user_id from alias where name = '$message_text' and chat_id = '$chat_id';")" == "$user_id" ]]; then
 								sqlite3 alias <<< "delete from alias where name = '"$message_text"';"
 								answer_text='Alias deleted.'
 							else
@@ -206,13 +206,13 @@ while true; do
 						;;
 						*)
 							message_text="${message_text:6}"
-							if [[ "$(sqlite3 alias <<< "select name from alias where name = '"$message_text"' and chat_id = '"$chat_id"';")" ]]; then
+							if [[ "$(sqlite3 alias <<< "select name from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
 								curl -s "$tele_url/forwardMessage" \
 									--data-urlencode "chat_id=$chat_id" \
 									--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
 									--data-urlencode "message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")"
 								timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
-								sqlite3 alias <<< "update alias set timestamp=$timestamp where name='"$message_text"' and chat_id = '"$chat_id"';"
+								sqlite3 alias <<< "update alias set timestamp = $timestamp where name='$message_text' and chat_id = '$chat_id';"
 							fi
 						;;
 					esac
@@ -229,7 +229,7 @@ while true; do
 								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
 									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
 										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
-										sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
+											sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
 										fi
 										sqlite3 hashtag <<< "insert into '"$content_text"' values($user_id);"
 										answer_text="You have subscribed to hashtag $content_text."
@@ -385,13 +385,13 @@ while true; do
 									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
 										user_id_list="$user_id_list $users"
 										userinfo="$(curl -s "$tele_url/getChatMember" \
-										--data-urlencode "chat_id=$chat_id" \
-										--data-urlencode "user_id=$users")"
+											--data-urlencode "chat_id=$chat_id" \
+											--data-urlencode "user_id=$users")"
 										username="@$(echo "$userinfo" | jq -r '.result.user.username')"
 										status="$(echo "$userinfo" | jq -r '.result.status')"
 										if [[ $username != '@null' ]] && [[ $status != 'left' ]] && [[ $status != 'kicked' ]]; then
-										mention=1
-										post_users="$post_users $username"
+											mention=1
+											post_users="$post_users $username"
 										fi
 									fi
 								done
