@@ -9,7 +9,7 @@ pic_path="$4"
 clarifai_key="$5"
 tele_url="$api_url/bot$token"
 users_per_send=5
-covid_api='https://corona.lmao.ninja'
+covid_api='https://corona.lmao.ninja/v2'
 
 last_id=0
 if [[ ! -f alias ]]; then
@@ -17,25 +17,31 @@ if [[ ! -f alias ]]; then
 fi
 
 send() {
-	curl -s "$tele_url/sendMessage" \
-		--data-urlencode "chat_id=$1" \
-		--data-urlencode "reply_to_message_id=$2" \
-		--data-urlencode "text=$3"
+	for ((count=1; count<=5; count++)); do
+		curl -s "$tele_url/sendMessage" \
+			--data-urlencode "chat_id=$1" \
+			--data-urlencode "reply_to_message_id=$2" \
+			--data-urlencode "text=$3"
+		[[ "$?" == 0 ]] && break
+	done
 }
 
 send_formatted() {
-	if [[ "$1" != 'reply' ]]; then
-		curl -s "$tele_url/sendMessage" \
-			--data-urlencode "parse_mode=html" \
-			--data-urlencode "chat_id=$1" \
-			--data-urlencode "text=<i>$(echo -e "$2" | sed 's/<i>//g;s/<\/i>//g')</i>"
-	else
-		curl -s "$tele_url/sendMessage" \
-			--data-urlencode "parse_mode=html" \
-			--data-urlencode "chat_id=$2" \
-			--data-urlencode "reply_to_message_id=$3" \
-			--data-urlencode "text=<i>$(echo -e "$4" | sed 's/<i>//g;s/<\/i>//g')</i>$5"
-	fi
+	for ((count=1; count<=5; count++)); do
+		if [[ "$1" != 'reply' ]]; then
+			curl -s "$tele_url/sendMessage" \
+				--data-urlencode "parse_mode=html" \
+				--data-urlencode "chat_id=$1" \
+				--data-urlencode "text=<i>$(echo -e "$2" | sed 's/<i>//g;s/<\/i>//g')</i>"
+		else
+			curl -s "$tele_url/sendMessage" \
+				--data-urlencode "parse_mode=html" \
+				--data-urlencode "chat_id=$2" \
+				--data-urlencode "reply_to_message_id=$3" \
+				--data-urlencode "text=<i>$(echo -e "$4" | sed 's/<i>//g;s/<\/i>//g')</i>$5"
+		fi
+		[[ "$?" == 0 ]] && break
+	done
 }
 
 message_id() {
@@ -96,7 +102,16 @@ story(){
 }
 
 covid_top(){
-	curl -s "$covid_api/countries?sort=$1" | jq -r '.[0,1,2,3,4,5,6,7,8,9] | "\(.country) - \(.'"$1"')"'
+	timeout 3s curl -s "$covid_api/countries?sort=$1" | jq -r '.[0,1,2,3,4,5,6,7,8,9] | "\(.country) - \(.'"$1"')"'
+}
+
+covid_answer() {
+	answer_text="$(covid_top $1)"
+	if [[ "$?" != '0' ]]; then
+		answer_text='API response error'
+	else
+		answer_text="Top 10 countries by $2:\n\n$answer_text"
+	fi
 }
 
 while true; do
@@ -265,10 +280,12 @@ while true; do
 							if [[ $content_text ]]; then
 								answer_text=""
 								for user in $(sqlite3 hashtag <<< "select user_id from '"$content_text"';"); do
-									username="$(curl -s "$tele_url/getChatMember" \
+									userinfo="$(curl -s "$tele_url/getChatMember" \
 										--data-urlencode "chat_id=$chat_id" \
-										--data-urlencode "user_id=$user" | jq '.result.user.username' | sed 's/"//g')"
-									if [[ $username != 'null' ]]; then
+										--data-urlencode "user_id=$user")"
+									username="$(echo "$userinfo" | jq '.result.user.username' | sed 's/"//g')"
+									status="$(echo "$userinfo" | jq -r '.result.status')"
+									if [[ $username != 'null' ]] && [[ $status != 'left' ]] && [[ $status != 'kicked' ]]; then
 										answer_text="$answer_text $username"
 									fi
 								done
@@ -379,15 +396,28 @@ while true; do
 				'covid'*)
 					case $message_text in
 						'covid')
-							covid_response="$(curl -s "$covid_api/all")"
-							covid_lastupdated="$(echo "$covid_response" | jq -r ".updated")"
-							answer_text="Covid-19 worldwide information:
+							covid_response="$(timeout 3s curl -s "$covid_api/all")"
+							if [[ "$?" != '0' ]]; then
+								answer_text='API response error'
+							else
+								covid_lastupdated="$(echo "$covid_response" | jq -r ".updated")"
+								answer_text="Covid-19 worldwide information:
 
-Cases: $(echo "$covid_response" | jq -r ".cases")
-Deaths: $(echo "$covid_response" | jq -r ".deaths")
+Cases total: $(echo "$covid_response" | jq -r ".cases")
+Cases today: $(echo "$covid_response" | jq -r ".todayCases")
+Deaths total: $(echo "$covid_response" | jq -r ".deaths")
+Deaths today: $(echo "$covid_response" | jq -r ".todayDeaths")
 Recovered: $(echo "$covid_response" | jq -r ".recovered")
+Active cases: $(echo "$covid_response" | jq -r ".active")
+In critical condition: $(echo "$covid_response" | jq -r ".critical")
+Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")
+Deaths per illion: $(echo "$covid_response" | jq -r ".deathsPerOneMillion")
+Tests total: $(echo "$covid_response" | jq -r ".tests")
+Tests per million: $(echo "$covid_response" | jq -r ".testsPerOneMillion")
+Affected countries: $(echo "$covid_response" | jq -r ".affectedCountries")
 
 Last time updated: $(date -d @${covid_lastupdated::-3})"
+							fi
 						;;
 						'covid -t '*)
 							message_text="${message_text:9}"
@@ -397,56 +427,92 @@ Last time updated: $(date -d @${covid_lastupdated::-3})"
 									if [[ "$message_text" ]]; then
 										case $message_text in
 											' today')
-												answer_text="Top 10 countries by new cases today:\n\n$(covid_top todayCases)"
+												covid_answer "todayCases" "new cases today"
 											;;
 											' per1kk')
-												answer_text="Top 10 countries by cases per million:\n\n$(covid_top casesPerOneMillion)"
+												covid_answer "casesPerOneMillion" "cases per million"
 											;;
 											*)
 												answer_text='Wrong parameter specified'
 											;;
 										esac
 									else
-										answer_text="Top 10 countries by cases total:\n\n$(covid_top cases)"
+										covid_answer "cases" "cases total"
 									fi
 								;;
 								'deaths'*)
 									message_text="${message_text:6}"
 									if [[ "$message_text" ]]; then
-										if [[ "$message_text" == ' today' ]]; then
-											answer_text="Top 10 countries by deaths today:\n\n$(covid_top todayDeaths)"
-										else
-											answer_text='Wrong parameter specified'
-										fi
+										case $message_text in
+											' today')
+												covid_answer "todayDeaths" "deaths today"
+											;;
+											' per1kk')
+												covid_answer "deathsPerOneMillion" "deaths per million"
+											;;
+											*)
+												answer_text='Wrong parameter specified'
+											;;
+										esac
 									else
-										answer_text="Top 10 countries by deaths:\n\n$(covid_top deaths)"
+										covid_answer "deaths" "deaths total"
 									fi
 								;;
 								'recovered')
-									answer_text="Top 10 countries by recovery cases:\n\n$(covid_top recovered)"
+									covid_answer "recovered" "recovery cases"
 								;;
 								'active')
 									answer_text="Top 10 countries by active cases:\n\n$(covid_top active)"
+									covid_answer "active" "active cases"
 								;;
 								'critical')
-									answer_text="Top 10 countries by critical cases:\n\n$(covid_top critical)"
+									covid_answer "critical" "critical cases"
 								;;
 								*)
 									answer_text='Wrong parameter specified'
 								;;
 							esac
 						;;
+						'covid -p '*)
+							message_text="${message_text:9}"
+							country="$(echo "$message_text" | cut -d ' ' -f 2)"
+							filter="$(echo "$message_text" | cut -d ' ' -f 1)"
+							if [[ "$country" ]]; then
+								if [[ "$filter" == 'cases' ]] || [[ "$filter" == 'deaths' ]] || [[ "$filter" == 'recovered' ]]; then
+									covid_response="$(timeout 3s curl -s "$covid_api/historical/$(echo "$country" | sed --sandbox 's/[[:blank:]]/%20/g')?lastdays=15")"
+									if [[ "$?" != '0' ]]; then
+										answer_text='API response error'
+									else
+										if [[ "$(echo "$covid_response" | jq -r ".message")" == "Country not found or doesn't have any historical data" ]]; then
+											answer_text="$(echo "$covid_response" | jq -r ".message")"
+										else
+											answer_text="Number of $filter for $country in the last 15 days:
+
+$(echo "$covid_response" | jq -r ".timeline.$filter" | head -n -1 | tail -n +2 | tr -d '",')"
+										fi
+									fi
+								else
+									answer_text='Wrong parameter specified'
+								fi
+							else
+								answer_text='Not enough parameters'
+							fi
+						;;
 						'covid -h')
 							answer_text="$(cat covid_help.txt)"
 						;;
 						'covid '*)
 							message_text="${message_text:6}"
-							if [[ ! "$(echo "$message_text" | tr -d '[:alpha:]')" ]]; then
-								covid_response="$(curl -s "$covid_api/countries/$(echo "$message_text" | sed --sandbox 's/[[:blank:]]/%20/g')")"
-								if [[ "$covid_response" == "Country not found" ]]; then
-									answer_text="$covid_response"
+							if [[ ! "$(echo "$message_text" | tr -d '[:alpha:] ')" ]]; then
+								covid_response="$(timeout 3s curl -s "$covid_api/countries/$(echo "$message_text" | sed --sandbox 's/[[:blank:]]/%20/g')")"
+								if [[ "$?" != '0' ]]; then
+									answer_text='API response error'
 								else
-									answer_text="Covid-19 information for $(echo "$covid_response" | jq -r ".country"):
+									if [[ "$(echo "$covid_response" | jq -r ".message")" == "Country not found or doesn't have any cases" ]]; then
+										answer_text="$(echo "$covid_response" | jq -r ".message")"
+									else
+										covid_lastupdated="$(echo "$covid_response" | jq -r ".updated")"
+										answer_text="Covid-19 information for $(echo "$covid_response" | jq -r ".country"):
 
 Cases total: $(echo "$covid_response" | jq -r ".cases")
 Cases today: $(echo "$covid_response" | jq -r ".todayCases")
@@ -455,10 +521,14 @@ Deaths today: $(echo "$covid_response" | jq -r ".todayDeaths")
 Recovered total: $(echo "$covid_response" | jq -r ".recovered")
 Active cases: $(echo "$covid_response" | jq -r ".active")
 In critical condition: $(echo "$covid_response" | jq -r ".critical")
-Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")"
+Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")
+Deaths per million: $(echo "$covid_response" | jq -r ".deathsPerOneMillion")
+Tests total: $(echo "$covid_response" | jq -r ".tests")
+Tests per million: $(echo "$covid_response" | jq -r ".testsPerOneMillion")
+
+Last time updated: $(date -d @${covid_lastupdated::-3})"
+									fi
 								fi
-							else
-								answer_text='Wrong parameter specified'
 							fi
 						;;
 					esac
@@ -517,7 +587,7 @@ Cases per million: $(echo "$covid_response" | jq -r ".casesPerOneMillion")"
 			post_users="$(cat /tmp/post_users | tr ' ' '\n' | sort -u)"
 			users_num="$(echo -n "$post_users" | wc -l)"
 			if (( "$users_num" > "$users_per_send" )); then
-				for ((user_offset=1; user_offset<"$users_num"; user_offset="$(( "$user_offset" + "$users_per_send" ))" )); do
+				for ((user_offset=1; user_offset<="$users_num"; user_offset="$(( "$user_offset" + "$users_per_send" ))" )); do
 					post_users_chunk="$(echo "$post_users" | tail -n "$(( $users_num - $user_offset + 1 ))" | head -n "$users_per_send" | tr '\n' ' ')"
 					send "$chat_id" "$message_id" "$(echo -e "$post_hashtags\n\n$post_users_chunk")"
 				done
