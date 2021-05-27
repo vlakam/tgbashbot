@@ -94,10 +94,6 @@ get_hashtags() {
 	fi
 }
 
-story(){
-	story="$(curl -s 'https://models.dobro.ai/gpt2/medium/' --data-binary '{"prompt":"'"$*"'","length":50,"num_samples":1}' | jq -r ".replies[]")"
-}
-
 covid_top(){
 	timeout 3s curl -s "$covid_api/countries?sort=$1" | jq -r '.[0,1,2,3,4,5,6,7,8,9] | "\(.country) - \(.'"$1"')"'
 }
@@ -373,22 +369,7 @@ while true; do
 				;;
 				'story'*)
 					reply_id
-					if [[ "$reply_id" != 'null' ]]; then
-						reply_text
-						if [[ "$reply_text" != 'null' ]]; then
-							story "${reply_text//\\}"
-							send_formatted 'reply' "$chat_id" "$reply_id" "$reply_text" "$story"
-						else
-							send "$chat_id" "$(message_id)" "Reply message has no text."
-						fi
-					else
-						if [[ "${message_text:6}" ]]; then
-							story "${message_text:6}"
-							send_formatted 'reply' "$chat_id" "$(message_id)" "${message_text:6}" "$story"
-						else
-							send "$chat_id" "$(message_id)" "No text specified."
-						fi
-					fi
+					send "$chat_id" "$(message_id)" "Pls donate for self-hosted gpt2 model https://sobe.ru/na/gpt2"
 				;;
 				'covid'*)
 					case $message_text in
