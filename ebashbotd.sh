@@ -3,14 +3,14 @@
 token=''
 api_url='https://api.telegram.org'
 file='/tmp/ebashbotd'
-pic_path='image_serve'
+pic_path='/tmp/ebashbot_files/'
 pic_name='image.png'
 clarifai_key=''
 
 tele_url="$api_url/bot$token"
 
 start_bot() {
-        ./ebashbot.sh "$api_url" "$token" "$pic_path" "$pic_name" "$clarifai_key"
+        ./ebashbot.sh "$api_url" "$token" "$pic_path" "$clarifai_key"
 }
 
 [[ "$1" != "slave" ]] && {
