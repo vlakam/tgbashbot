@@ -4,9 +4,8 @@ cd "$(dirname "$0")"
 
 api_url="$1"
 token="$2"
-host="$3"
-pic_path="$4"
-clarifai_key="$5"
+pic_path="$3"
+clarifai_key="$4"
 tele_url="$api_url/bot$token"
 users_per_send=5
 covid_api='https://corona.lmao.ninja/v2'
@@ -62,7 +61,6 @@ reply_text() {
 }
 
 get_hashtags() {
-	pic_name="$(cat /dev/urandom | tr -cd '[:alnum:]' | head -c 8).png"
 	rec_hashtags=""
 	if [[ $1 == 'reply' ]]; then
 		reply='.reply_to_message'
@@ -71,7 +69,7 @@ get_hashtags() {
 	if [[ $file_id_num != 0 ]]; then
 		file_id="$(echo "$updates" | jq -r ".result[$i].message$reply.photo[$(( $file_id_num - 1 ))].file_id")"
 		file_path="$(curl --data-urlencode "file_id=$file_id" "$tele_url/getFile" | jq ".result.file_path" | tr -d '"')"
-		curl "$api_url/file/bot$token/$file_path" > "$pic_path/$pic_name"
+		file_url="$api_url/file/bot$token/$file_path"
 		clarifai="$(curl -X POST \
 			-H "Authorization: Key $clarifai_key" \
 			-H "Content-Type: application/json" \
@@ -81,14 +79,13 @@ get_hashtags() {
 						{
 							"data": {
 								"image": {
-									"url": "'$host'/'$pic_name'"
+									"url": "'$file_url'"
 								}
 							}
 						}
 					]
 				}'\
 			https://api.clarifai.com/v2/models/aaa03c23b3724a16a56b629203edc62c/outputs | jq ".outputs[0].data.concepts")"
-		rm "$pic_path/$pic_name"
 		clarifai_length="$(echo "$clarifai" | jq ". | length")"
 		rec_hashtags=""
 		for ((rec_num=0; rec_num<"$clarifai_length"; rec_num++)); do
