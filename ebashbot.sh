@@ -114,7 +114,8 @@ while true; do
 			--data-urlencode "offset=$(( $last_id + 1 ))" \
 			--data-urlencode "timeout=60")
 		updates_count=$(echo "$updates" | jq -r ".result | length")
-		last_id=$(echo "$updates" | jq -r ".result[$(( "$updates_count" - 1 ))].update_id")
+		last_update_idx=$(($updates_count-1))
+		last_id=$(echo "$updates" | jq -r ".result[$last_update_idx].update_id")
 		for ((i=0; i<"$updates_count"; i++)); do
 			(
 			date +%F-%T >> ebash.log
