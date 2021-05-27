@@ -6,4 +6,4 @@ services:
             context: '.'
         env_file: .env
         volumes:
-            - ./ebash.log:/app/ebash.log
+            - ./bot_data:/app/bot_data

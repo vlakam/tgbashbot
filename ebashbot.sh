@@ -9,10 +9,13 @@ clarifai_key="$4"
 tele_url="$api_url/bot$token"
 users_per_send=5
 covid_api='https://corona.lmao.ninja/v2'
+path_to_alias_db="./bot_data/alias.db"
+path_to_hashtag_db="./bot_data/hashtag.db"
+path_to_log="./bot_data/ebash.log"
 
 last_id=0
-if [[ ! -f alias ]]; then
-	sqlite3 alias <<< 'create table alias(name varchar(10), user_id smallint, chat_id smallint, reply_id smallint, timestamp smallint);'
+if [[ ! -f $path_to_alias_db ]]; then
+	sqlite3 $path_to_alias_db <<< 'create table alias(name varchar(10), user_id smallint, chat_id smallint, reply_id smallint, timestamp smallint);'
 fi
 
 send() {
@@ -117,8 +120,8 @@ while true; do
 		last_id=$(echo "$updates" | jq -r ".result[$last_update_idx].update_id")
 		for ((i=0; i<"$updates_count"; i++)); do
 			(
-			date +%F-%T >> ebash.log
-			echo "$updates" | jq ".result[$i]" >> ebash.log
+			date +%F-%T >> $path_to_log
+			echo "$updates" | jq ".result[$i]" >> $path_to_log
 			chat_id="$(echo "$updates" | jq ".result[$i].message.chat.id")"
 			message_text="$(echo "$updates" | jq ".result[$i].message.text")"
 			if [[ $message_text == 'null' ]]; then
@@ -165,10 +168,10 @@ while true; do
 							if [[ "$reply_id" != 'null' ]]; then
 								message_text="${message_text:9}"
 								if (( $(echo $message_text | wc -m) < 14 )); then
-									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 alias <<< "select chat_id from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
+									if [[ $message_text =~ ^[[:alnum:]]+$ ]] && [[ ! "$(sqlite3 $path_to_alias_db <<< "select chat_id from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
 										user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
 										timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
-										sqlite3 alias <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id,$timestamp);"
+										sqlite3 $path_to_alias_db <<< "insert into alias values('"$message_text"',$user_id,$chat_id,$reply_id,$timestamp);"
 										message_text='Alias created'
 									else
 										message_text='Alias already exists or name contains non-alphanumeric characters.'
@@ -183,10 +186,10 @@ while true; do
 						;;
 						'alias -lm'*)
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							send "$chat_id" "$(message_id)" "$(sqlite3 alias <<< "select name from alias where user_id = '$user_id' and chat_id = '$chat_id';" | sort | tr '\n' ' ')"
+							send "$chat_id" "$(message_id)" "$(sqlite3 $path_to_alias_db <<< "select name from alias where user_id = '$user_id' and chat_id = '$chat_id';" | sort | tr '\n' ' ')"
 						;;
 						'alias -l'*)
-							answer_text="$(sqlite3 alias <<< "select name from alias where chat_id='$chat_id';" | sort | tr '\n' ' ')"
+							answer_text="$(sqlite3 $path_to_alias_db <<< "select name from alias where chat_id='$chat_id';" | sort | tr '\n' ' ')"
 							message_length=4096
 							if (( $(echo "$answer_text" | wc -m) > $message_length )); then
 								pile=''
@@ -207,8 +210,8 @@ while true; do
 						'alias -r '*)
 							message_text="${message_text:9}"
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
-							if [[ "$(sqlite3 alias <<< "select user_id from alias where name = '$message_text' and chat_id = '$chat_id';")" == "$user_id" ]]; then
-								sqlite3 alias <<< "delete from alias where name = '"$message_text"';"
+							if [[ "$(sqlite3 $path_to_alias_db <<< "select user_id from alias where name = '$message_text' and chat_id = '$chat_id';")" == "$user_id" ]]; then
+								sqlite3 $path_to_alias_db <<< "delete from alias where name = '"$message_text"';"
 								answer_text='Alias deleted.'
 							else
 								answer_text="Alias doesn't exist or you do not own it."
@@ -220,13 +223,13 @@ while true; do
 						;;
 						*)
 							message_text="${message_text:6}"
-							if [[ "$(sqlite3 alias <<< "select name from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
+							if [[ "$(sqlite3 $path_to_alias_db <<< "select name from alias where name = '$message_text' and chat_id = '$chat_id';")" ]]; then
 								curl -s "$tele_url/forwardMessage" \
 									--data-urlencode "chat_id=$chat_id" \
-									--data-urlencode "from_chat_id=$(sqlite3 alias <<< "select chat_id from alias where name = '"$message_text"';")" \
-									--data-urlencode "message_id=$(sqlite3 alias <<< "select reply_id from alias where name = '"$message_text"';")"
+									--data-urlencode "from_chat_id=$(sqlite3 $path_to_alias_db <<< "select chat_id from alias where name = '"$message_text"';")" \
+									--data-urlencode "message_id=$(sqlite3 $path_to_alias_db <<< "select reply_id from alias where name = '"$message_text"';")"
 								timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
-								sqlite3 alias <<< "update alias set timestamp = $timestamp where name='$message_text' and chat_id = '$chat_id';"
+								sqlite3 $path_to_alias_db <<< "update alias set timestamp = $timestamp where name='$message_text' and chat_id = '$chat_id';"
 							fi
 						;;
 					esac
@@ -241,11 +244,11 @@ while true; do
 							user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
 							if (( $(echo $content_text | wc -m) < 18 )); then
 								if [[ $content_text =~ ^[[:alnum:]]+$ ]]; then
-									if [[ ! "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
-										if [[ ! "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
-											sqlite3 hashtag <<< "create table '"$content_text"'(user_id smallint);"
+									if [[ ! "$(sqlite3 $path_to_hashtag_db <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
+										if [[ ! "$(sqlite3 $path_to_hashtag_db <<< "select name from sqlite_master where type='table' and name='"$content_text"';")" ]]; then
+											sqlite3 $path_to_hashtag_db <<< "create table '"$content_text"'(user_id smallint);"
 										fi
-										sqlite3 hashtag <<< "insert into '"$content_text"' values($user_id);"
+										sqlite3 $path_to_hashtag_db <<< "insert into '"$content_text"' values($user_id);"
 										answer_text="You have subscribed to hashtag $content_text."
 									else
 										answer_text="You are already subscribed to hashtag $content_text."
@@ -259,11 +262,11 @@ while true; do
 							send "$chat_id" "$(message_id)" "$answer_text"
 						;;
 						'hashtag -u'*)
-							if [[ "$(sqlite3 hashtag <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
-								sqlite3 hashtag <<< "delete from '"$content_text"' where user_id='"$user_id"';"
+							if [[ "$(sqlite3 $path_to_hashtag_db <<< "select user_id from '"$content_text"' where user_id='"$user_id"';")" ]]; then
+								sqlite3 $path_to_hashtag_db <<< "delete from '"$content_text"' where user_id='"$user_id"';"
 								answer_text="You have unsubscribed from this tag."
-								if [[ ! "$(sqlite3 hashtag <<< "select * from '"$content_text"';")" ]]; then
-									sqlite3 hashtag <<< "drop table '"$content_text"';"
+								if [[ ! "$(sqlite3 $path_to_hashtag_db <<< "select * from '"$content_text"';")" ]]; then
+									sqlite3 $path_to_hashtag_db <<< "drop table '"$content_text"';"
 								fi
 							else
 								answer_text="You are not subscribed to this hashtag."
@@ -273,7 +276,7 @@ while true; do
 						'hashtag -l'*)
 							if [[ $content_text ]]; then
 								answer_text=""
-								for user in $(sqlite3 hashtag <<< "select user_id from '"$content_text"';"); do
+								for user in $(sqlite3 $path_to_hashtag_db <<< "select user_id from '"$content_text"';"); do
 									userinfo="$(curl -s "$tele_url/getChatMember" \
 										--data-urlencode "chat_id=$chat_id" \
 										--data-urlencode "user_id=$user")"
@@ -285,8 +288,8 @@ while true; do
 								done
 							else
 								answer_text=""
-								for hashtag in $(sqlite3 hashtag <<< "select name from sqlite_master;"); do
-									if [[ $(sqlite3 hashtag <<< "select user_id from '"$hashtag"' where user_id=$user_id;") ]]; then
+								for hashtag in $(sqlite3 $path_to_hashtag_db <<< "select name from sqlite_master;"); do
+									if [[ $(sqlite3 $path_to_hashtag_db <<< "select user_id from '"$hashtag"' where user_id=$user_id;") ]]; then
 										answer_text="$answer_text "'#'"$hashtag"
 										temp "$answer_text"
 									fi
@@ -350,7 +353,7 @@ while true; do
 					send "$chat_id" "$(message_id)" "pong"
 				;;
 				'sources'*)
-					send "$chat_id" "$(message_id)" "https://gitlab.com/madicine6/eBashBot"
+					send "$chat_id" "$(message_id)" "https://github.com/vlakam/tgbashbot"
 				;;
 				'/me '*)
 					reply_id
@@ -521,9 +524,9 @@ Last time updated: $(date -d @${covid_lastupdated::-3})"
 					if [[ "$rec_hashtags $hashlist" != " " ]]; then
 						for word in $rec_hashtags $hashlist; do
 							hashtag="${word:1}"
-							if [[ "$(sqlite3 hashtag <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
+							if [[ "$(sqlite3 $path_to_hashtag_db <<< "select name from sqlite_master where type='table' and name='"$hashtag"';")" ]]; then
 								mention=0
-								for users in $(sqlite3 hashtag <<< "select user_id from '"$hashtag"';"); do
+								for users in $(sqlite3 $path_to_hashtag_db <<< "select user_id from '"$hashtag"';"); do
 									if [[ ! $(echo "$user_id_list" | grep "$users") ]]; then
 										user_id_list="$user_id_list $users"
 										userinfo="$(curl -s "$tele_url/getChatMember" \
