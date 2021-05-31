@@ -10,6 +10,7 @@ clarifai_key="$5"
 tele_url="$api_url/bot$token"
 users_per_send=5
 covid_api='https://corona.lmao.ninja/v2'
+rm_lim='3'
 
 last_id=0
 if [[ ! -f alias ]]; then
@@ -533,6 +534,35 @@ Last time updated: $(date -d @${covid_lastupdated::-3})"
 						;;
 					esac
 					send "$chat_id" "$(message_id)" "$(echo -e "$answer_text")"
+				;;
+				'rm')
+					reply_id
+					message_id="$(message_id)"
+					user_id="$(echo "$updates" | jq ".result[$i].message.from.id")"
+					if [[ "$reply_id" == 'null' ]]; then
+						message_text="No message specified."
+					else
+						if [[ ! "$(sqlite3 rm.db <<< "select name from sqlite_master where type='table' and name='"c$(echo "$chat_id" | tr -d '-')"';")" ]]; then
+							sqlite3 rm.db <<< 'create table '"c$(echo "$chat_id" | tr -d '-')"'(message_id smallint, user_id smallint, timestamp smallint);'
+						fi
+						if [[ ! "$(sqlite3 rm.db <<< "select message_id from c$(echo "$chat_id" | tr -d '-') where user_id = '"$user_id"' and message_id = '"$reply_id"'")" ]]; then
+							count="$(( $(sqlite3 rm.db <<< "select message_id from c$(echo "$chat_id" | tr -d '-') where user_id != '"$user_id"' and message_id = '"$reply_id"'"| wc -l) + 1 ))"
+							if (( $count >= $rm_lim )); then
+								curl -s "$tele_url/deleteMessage" \
+									--data-urlencode "chat_id=$chat_id" \
+									--data-urlencode "message_id=$reply_id"
+								message_text="Message removed."
+								sqlite3 rm.db <<< "drop table c$(echo "$chat_id" | tr -d '-');"
+							else
+								timestamp="$(echo "$updates" | jq ".result[$i].message.date")"
+								sqlite3 rm.db <<< "insert into c$(echo "$chat_id" | tr -d '-') values($reply_id,$user_id,$timestamp);"
+								message_text="Message report count: $count"
+							fi
+						else
+							message_text="You've already reported this message."
+						fi
+					fi
+ 					send "$chat_id" "$message_id" "$message_text"
 				;;
 				*)
 					get_hashtags
